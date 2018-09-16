@@ -1,26 +1,23 @@
 import System.Random
 import Data.Time.Clock.POSIX
-
-data Prize = Goat | Car
-    deriving (Show, Eq)
+import Data.Char
 
 (|>) :: a -> (a -> b) -> b
 (|>) x f = f x
 infixl 0 |>
-
-doorN = 3
-switch = True
-
-data Info = Unknown | RevealedBad | Chosen 
-    deriving (Show, Eq)
-
-type Door = (Prize, Info)
 
 removeFirst :: (a -> Bool) -> [a] -> Maybe [a]
 removeFirst p []     = Nothing
 removeFirst p (x:xs) = if p x
                        then Just xs
                        else case removeFirst p xs of
+                            Just xs' -> Just $ x : xs'
+                            Nothing -> Nothing
+replaceFirst :: (a -> Bool) -> a -> [a] -> Maybe [a]
+replaceFirst p y []     = Nothing
+replaceFirst p y (x:xs) = if p x
+                          then Just $ y : xs
+                          else case replaceFirst p y xs of
                             Just xs' -> Just $ x : xs'
                             Nothing -> Nothing
 
@@ -35,6 +32,17 @@ unwrape :: String -> Maybe a -> a
 unwrape _   (Just x) = x
 unwrape err Nothing  = error err
 unwrap = unwrape "Not expected to fail"
+
+
+data Prize = Goat | Car
+    deriving (Show, Eq)
+
+data Info = Unknown | RevealedBad | Chosen 
+    deriving (Show, Eq)
+
+type Door = (Prize, Info)
+
+doorN = 3
 
 constructDoors :: [Door]
 constructDoors =
@@ -61,20 +69,15 @@ isChosen _           = False
 
 switchDoors :: Int -> [Door] -> [Door]
 switchDoors rnd ds =
-    ds |> removeFirst isToSwap |> unwrap 
-       |> removeFirst isChosen |> unwrap 
-       |> (:) (swapPrize, Chosen)
-       |> (:) (chosenPrize, Unknown)
-    where
-        isToSwap :: Door -> Bool
-        isToSwap (_, Unknown) = True
-        isToSwap _            = False
+    let
+        filt = filter (\(p, inf) -> inf == Unknown) ds
+        imod = mod rnd $ length filt
+        (re_p, re_inf) = filt !! imod
+    in
+        [(re_p, Chosen)]
 
-        (chosenPrize, _) = ds |> filter isChosen |> head
-        (swapPrize, _)   = ds |> filter isToSwap |> head
-
-lap :: Int -> Int -> Bool
-lap rnd1 rnd2 =
+lap :: Bool -> Int -> Int -> Bool
+lap switch rnd1 rnd2 =
     ds3 |> filter isChosen |> head |> (==) (Car, Chosen)
     where
         ds0 = constructDoors
@@ -86,23 +89,28 @@ lap rnd1 rnd2 =
 
 type Result = (Int, Int)
 
-loop :: [Int] -> Int -> Result
-loop = loopt (0, 0)
+loop :: Bool -> [Int] -> Int -> Result
+loop switch = loopt (0, 0)
     where
         loopt :: Result -> [Int] -> Int -> Result
-        loopt prev       _              0     = prev
+        loopt prev         _            0     = prev
         loopt (win, los) (r0 : r1 : rs) times = loopt curr rs (times - 1)
             where
-                curr = if lap r0 r1 then (win + 1, los) else (win, los + 1)
+                curr = if lap switch r0 r1 then (win + 1, los) else (win, los + 1)
 
 main = do
     t <- getPOSIXTime
     rs <- return $ randoms $ mkStdGen $ round t
+    
+    putStr "Switch doors? [Y/n] "
+    switchStr <- getLine
+    switch <- return $ case map toLower switchStr of 
+                       "n" -> False
+                       _   -> True
 
-    (win, los) <- return $ loop rs 10000
+    (win, los) <- return $ loop switch rs 10000
     perc <- return $ round $ (fromIntegral win) / (fromIntegral $ win + los) * 100
     
-    print $ "Switch: " ++ show switch
-    print $ "Result: " ++ show win ++ "/" ++ (show $ los + win)
+    putStrLn $ "Result: " ++ show win ++ "/" ++ (show $ los + win)
         ++ " (" ++ show perc ++ "%)"
 
